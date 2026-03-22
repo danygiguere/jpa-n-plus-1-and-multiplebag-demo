@@ -1,0 +1,258 @@
+{
+  "info": {
+    "name": "jpa-n-plus-1-and-multiplebag-demo",
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "description": "Demonstrates two of the most common and misunderstood query problems in Hibernate/JPA: the **N+1 problem** and the **MultipleBag problem**. Both are silent by default, both are easy to ship under time pressure, and both have well-understood fixes.\n\n## How to use\n1. Start the app: `./gradlew bootRun`\n2. Import this collection into Postman (`{{baseUrl}}` = `http://localhost:8080`)\n3. Watch the console SQL output while calling each endpoint — the query count tells the story.\n\n## Query count reference\n\n| Endpoint | Queries fired |\n|---|---|\n| GET /api/users/n-plus-one | 7 (1 + 3 + 3) |\n| GET /api/users/fetch-join | 1 |\n| GET /api/users/entity-graph | 1 |\n| GET /api/users/fetch-join-images | 1 |\n| GET /api/posts/n-plus-one | 25 (1 + 12 + 12) |\n| GET /api/posts/fetch-join | 1 |\n| GET /api/posts/entity-graph | 1 |\n| GET /api/bag-problem/crash | HTTP 422 — MultipleBagFetchException |\n| GET /api/bag-problem/fix | HTTP 200 — one bag at a time |\n| GET /api/bag-problem/fix-with-set | HTTP 200 — Set-based entities, 1 query |\n\n## H2 Console\nURL: http://localhost:8080/h2-console  \nJDBC URL: `jdbc:h2:mem:n1db` — Username: `sa` — Password: (empty)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Users",
+      "description": "Endpoints demonstrating N+1 and fixes at the User level.",
+      "item": [
+        {
+          "name": "❌ N+1 Problem — Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/n-plus-one",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "n-plus-one"
+              ]
+            },
+            "description": "**The N+1 Problem**\n\nHibernate fires:\n- `1` SELECT to load all users\n- `+N` SELECTs to load posts for each user\n- `+N` SELECTs to load images for each user\n\nWith 3 users → **7 queries total**.\n\nWatch the console: you will see repeated `select ... from posts where user_id=?` and `select ... from images where user_id=?` queries."
+          },
+          "response": []
+        },
+        {
+          "name": "✅ Fix 1 — JOIN FETCH (posts)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/fetch-join",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "fetch-join"
+              ]
+            },
+            "description": "**Fix: JPQL JOIN FETCH**\n\n```sql\nSELECT DISTINCT u FROM User u JOIN FETCH u.posts\n```\n\nHibernate fires a single JOIN query loading users + posts together.\n\nWatch the console: only **1 query** with a JOIN."
+          },
+          "response": []
+        },
+        {
+          "name": "✅ Fix 2 — @EntityGraph (posts + images)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/entity-graph",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "entity-graph"
+              ]
+            },
+            "description": "**Fix: @EntityGraph**\n\n```java\n@EntityGraph(attributePaths = {\"posts\", \"posts.images\"})\n```\n\nLoads users + posts + post images in **1 query** using LEFT JOIN FETCH — no JPQL needed.\n\n⚠️ Requires `Set` (not `List`) on `@OneToMany` collections, otherwise Hibernate throws `MultipleBagFetchException`."
+          },
+          "response": []
+        },
+        {
+          "name": "✅ Fix 3 — JOIN FETCH (profile images)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/fetch-join-images",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "fetch-join-images"
+              ]
+            },
+            "description": "**Fix: JPQL JOIN FETCH for user profile images**\n\n```sql\nSELECT DISTINCT u FROM User u JOIN FETCH u.images\n```\n\nLoads users + their direct images in **1 query**."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Posts",
+      "description": "Endpoints demonstrating N+1 and fixes at the Post level.",
+      "item": [
+        {
+          "name": "❌ N+1 Problem — Posts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/posts/n-plus-one",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "posts",
+                "n-plus-one"
+              ]
+            },
+            "description": "**The N+1 Problem — two levels**\n\nHibernate fires:\n- `1` SELECT to load all posts\n- `+N` SELECTs to load images for each post\n- `+N` SELECTs to load user for each post\n\nWith 12 posts → **25 queries total**.\n\nWatch the console for the flood of repeated SELECT statements."
+          },
+          "response": []
+        },
+        {
+          "name": "✅ Fix 1 — JOIN FETCH (images)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/posts/fetch-join",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "posts",
+                "fetch-join"
+              ]
+            },
+            "description": "**Fix: JPQL JOIN FETCH**\n\n```sql\nSELECT DISTINCT p FROM Post p JOIN FETCH p.images\n```\n\nLoads posts + images in **1 query**."
+          },
+          "response": []
+        },
+        {
+          "name": "✅ Fix 2 — @EntityGraph (user + images)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/posts/entity-graph",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "posts",
+                "entity-graph"
+              ]
+            },
+            "description": "**Fix: @EntityGraph**\n\n```java\n@EntityGraph(attributePaths = {\"user\", \"images\"})\n```\n\nLoads posts + their user + their images all in **1 query**.\n\nNotice the title includes `[by: User X]` — the user was loaded with no extra query."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Bag Problem (MultipleBagFetchException)",
+      "description": "Demonstrates Hibernate's MultipleBagFetchException — what happens when you try to JOIN FETCH two List-based @OneToMany collections simultaneously, and how to fix it.",
+      "item": [
+        {
+          "name": "❌ Crash — MultipleBagFetchException",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bag-problem/crash",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bag-problem",
+                "crash"
+              ]
+            },
+            "description": "**What is a Hibernate 'bag'?**\n\nA bag is what Hibernate calls a `java.util.List` on a `@OneToMany` association — unordered and allowing duplicates.\n\n**The crash**\n\nThis endpoint uses `BagUser` and `BagPost` entities whose `@OneToMany` collections are declared as `List` (two bags). The repository runs:\n```sql\nSELECT DISTINCT u FROM BagUser u\n  JOIN FETCH u.posts p\n  JOIN FETCH p.images\n```\n\nHibernate refuses with:\n```\nMultipleBagFetchException: cannot simultaneously fetch multiple bags:\n  [BagPost.images, BagUser.posts]\n```\n\nFetching two unbounded bags in one query produces a **Cartesian product** that Hibernate cannot safely deduplicate.\n\n**Returns HTTP 422** with the real exception message.\n\n➡️ Then call `/api/bag-problem/fix` to see the solution."
+          },
+          "response": []
+        },
+        {
+          "name": "✅ Fix — Change List to Set",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bag-problem/fix",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bag-problem",
+                "fix"
+              ]
+            },
+            "description": "**The Fix: `List` → `Set` on `@OneToMany`**\n\nChange your entity collections from `List` to `Set`:\n\n```java\n// ❌ BEFORE — bag, causes MultipleBagFetchException\n@OneToMany(mappedBy = \"user\")\nprivate List<Post> posts = new ArrayList<>();\n\n// ✅ AFTER — set, safe to JOIN FETCH simultaneously\n@OneToMany(mappedBy = \"user\")\nprivate Set<Post> posts = new LinkedHashSet<>();\n```\n\nWith `Set`, Hibernate can safely deduplicate the Cartesian product rows, allowing `@EntityGraph` to fetch multiple nested collections in a **single query**.\n\n**Returns HTTP 200** — 3 users with posts and images all loaded in 1 query."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/bag-problem/fix-with-set",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bag-problem/fix-with-set",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bag-problem",
+                "fix-with-set"
+              ]
+            },
+            "description": "Set-based fix: SetUser.posts and SetPost.images use Set<> (LinkedHashSet) instead of List. @EntityGraph({\"posts\",\"posts.images\"}) now loads users, posts, and images in a single query without throwing MultipleBagFetchException. Watch the console for one SELECT with two JOINs."
+          }
+        }
+      ]
+    },
+    {
+      "description": "Browser-based SQL console to inspect the in-memory database.",
+      "item": [
+        {
+          "name": "Open H2 Console",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/h2-console",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "h2-console"
+              ]
+            },
+            "description": "Opens the H2 web console in your browser.\n\nConnection settings:\n- **JDBC URL:** `jdbc:h2:mem:n1db`\n- **Username:** `sa`\n- **Password:** *(leave empty)*\n\nUseful queries to run:\n```sql\nSELECT * FROM users;\nSELECT * FROM posts;\nSELECT * FROM images;\n```"
+          },
+          "response": []
+        }
+      ],
+      "name": "H2 Console"
+    }
+  ]
+}
