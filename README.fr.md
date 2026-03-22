@@ -205,7 +205,7 @@ Comprendre ces valeurs par défaut facilite le raisonnement sur les
 
 ---
 
-## Les deux solutions
+## N+1: Les deux solutions
 
 Le problème N+1 a deux solutions standard en JPA. Les deux consistent à dire à
 Hibernate de charger l'association avec un `JOIN` au moment de la requête, plutôt que
@@ -332,7 +332,7 @@ réussir — chargeant le graphe complet en une seule requête.
 
 ---
 
-## Considérations architecturales
+## Associations JPA: Considérations architecturales
 
 Les problèmes N+1 et EAGER partagent une cause racine commune : **le comportement de
 requête implicite**. Lorsque des annotations sur une entité pilotent automatiquement

@@ -198,7 +198,7 @@ Understanding these defaults makes both the [fixes below](#the-two-fixes) and th
 
 ---
 
-## The Two Fixes
+## N+1: The Two Fixes
 
 The N+1 problem has two standard solutions in JPA. Both work by telling Hibernate to
 load the association with a `JOIN` at the time of the query, rather than lazily per row.
@@ -319,7 +319,7 @@ succeeding — loading the full graph in a single query.
 
 ---
 
-## Architectural Considerations
+## JPA Relationships: Architectural Considerations
 
 The N+1 and EAGER problems share a common root cause: **implicit query behaviour**.
 When annotations on an entity drive queries automatically, those queries are easy to
