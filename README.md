@@ -35,11 +35,10 @@ beside it. Import the Postman collection, start the app, and watch the query cou
 
 ## The N+1 Problem
 
-When Hibernate loads a list of entities, associations marked `LAZY` are not fetched
-immediately — they are proxied and loaded on demand the first time you access them.
-This is a sensible default. The problem arises when you access a lazy association
-inside a loop: Hibernate fires one `SELECT` per row rather than fetching everything
-upfront.
+The classic case is with `LAZY` loading: associations are not fetched immediately —
+they are proxied and loaded on demand the first time you access them. The problem
+arises when you access that association inside a loop: Hibernate fires one `SELECT`
+per row rather than fetching everything upfront.
 
 ```java
 List<User> users = userRepository.findAll(); // 1 query
@@ -51,6 +50,12 @@ for (User user : users) {
 
 With 3 users that is 4 queries. With 100 it is 101. The formula — **1 + N** — is where
 the name comes from.
+
+N+1 is not exclusive to `LAZY` loading, however. `EAGER` associations can produce the
+same pattern — Hibernate fires the extra selects automatically on every load, without
+any explicit loop in your code. The difference is that `LAZY` makes the trigger
+visible (the getter call), while `EAGER` hides it entirely inside Hibernate's
+bootstrapping. Either way, the fix is the same: `JOIN FETCH` or `@EntityGraph`.
 
 What makes this problem particularly insidious is that the code looks completely normal.
 There is no exception, no log message, no indication that anything is wrong. The extra

@@ -37,11 +37,10 @@ démarrez l'application et observez le nombre de requêtes.
 
 ## Le problème N+1
 
-Lorsque Hibernate charge une liste d'entités, les associations marquées `LAZY` ne sont
-pas chargées immédiatement — elles sont représentées par un proxy et ne sont chargées
-qu'au premier accès. C'est un comportement par défaut raisonnable. Le problème survient
-lorsque vous accédez à une association lazy dans une boucle : Hibernate exécute un
-`SELECT` par ligne plutôt que de tout charger d'emblée.
+Le cas classique est celui du chargement `LAZY` : les associations ne sont pas chargées
+immédiatement — elles sont représentées par un proxy et ne sont chargées qu'au premier
+accès. Le problème survient lorsque vous accédez à cette association dans une boucle :
+Hibernate exécute un `SELECT` par ligne plutôt que de tout charger d'emblée.
 
 ```java
 List<User> users = userRepository.findAll(); // 1 requête
@@ -53,6 +52,13 @@ for (User user : users) {
 
 Avec 3 utilisateurs, cela donne 4 requêtes. Avec 100, cela en donne 101. La formule —
 **1 + N** — est à l'origine du nom.
+
+Le N+1 n'est cependant pas exclusif au chargement `LAZY`. Les associations `EAGER`
+peuvent produire le même schéma — Hibernate exécute les selects supplémentaires
+automatiquement à chaque chargement, sans aucune boucle explicite dans votre code.
+La différence est que `LAZY` rend le déclencheur visible (l'appel du getter), tandis
+qu'`EAGER` le dissimule entièrement dans l'initialisation d'Hibernate. Dans les deux
+cas, la correction est la même : `JOIN FETCH` ou `@EntityGraph`.
 
 Ce qui rend ce problème particulièrement insidieux, c'est que le code paraît tout à
 fait normal. Aucune exception, aucun message de log, aucun signe que quelque chose ne
