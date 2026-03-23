@@ -207,7 +207,7 @@ private User user;
 ```
 
 Comprendre ces valeurs par défaut facilite le raisonnement sur les
-[solutions ci-dessous](#les-deux-solutions) et le [piège EAGER](#le-piège-eager).
+[solutions ci-dessous](#n1-les-deux-solutions) et le [piège EAGER](#le-piège-eager).
 
 ---
 

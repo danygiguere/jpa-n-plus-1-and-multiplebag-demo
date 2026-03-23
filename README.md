@@ -198,7 +198,7 @@ project are explicitly declared `LAZY`, overriding the JPA defaults:
 private User user;
 ```
 
-Understanding these defaults makes both the [fixes below](#the-two-fixes) and the
+Understanding these defaults makes both the [fixes below](#n1-the-two-fixes) and the
 [EAGER trap](#the-eager-trap) easier to reason about.
 
 ---
