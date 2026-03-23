@@ -78,10 +78,10 @@ où les associations sont souvent imbriquées.
 |---|---|---|---|
 | Cette démo — utilisateurs | 3 utilisateurs | posts + images | **7** (1 + 3 + 3) |
 | Cette démo — articles | 12 articles | images + auteur | **25** (1 + 12 + 12) |
-| Liste de commandes e-commerce | 100 commandes | articles + client + livraison | **301** |
-| Liste d'articles de blog (50/page) | 50 articles | auteur + tags + commentaires | **151** |
-| Export utilisateurs admin (500) | 500 utilisateurs | rôles + dernière connexion + profil | **1 501** |
 | Fil social (20 posts/page) | 20 posts | auteur + likes + commentaires + médias | **81** |
+| Liste d'articles de blog (50/page) | 50 articles | auteur + tags + commentaires | **151** |
+| Liste de commandes e-commerce | 100 commandes | articles + client + livraison | **301** |
+| Export utilisateurs admin (500) | 500 utilisateurs | rôles + dernière connexion + profil | **1 501** |
 
 Une seule requête chargeant 100 commandes et accédant à trois associations génère 301
 requêtes. L'endpoint fonctionne bien en phase de test, passe en production, et devient

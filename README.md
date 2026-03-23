@@ -73,10 +73,10 @@ expensive fast in production, where N is large and associations are often nested
 |---|---|---|---|
 | This demo — users | 3 users | posts + images | **7** (1 + 3 + 3) |
 | This demo — posts | 12 posts | images + author | **25** (1 + 12 + 12) |
-| E-commerce order list | 100 orders | items + customer + shipping | **301** |
-| Blog post list (paginated, 50 posts) | 50 posts | author + tags + comments | **151** |
-| Admin user export (500 users) | 500 users | roles + last login + profile | **1 501** |
 | Social feed (20 posts/page) | 20 posts | author + likes + comments + media | **81** |
+| Blog post list (paginated, 50 posts) | 50 posts | author + tags + comments | **151** |
+| E-commerce order list | 100 orders | items + customer + shipping | **301** |
+| Admin user export (500 users) | 500 users | roles + last login + profile | **1 501** |
 
 A single request that loads 100 orders and touches three associations produces 301
 queries. The endpoint looks fine in testing, ships to production, and becomes a database
