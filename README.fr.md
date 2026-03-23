@@ -24,10 +24,10 @@ démarrez l'application et observez le nombre de requêtes.
   - [Articles](#articles)
   - [Problème Bag](#problème-bag)
 - [Valeurs par défaut JPA des types de chargement](#valeurs-par-défaut-jpa-des-types-de-chargement)
+- [Le piège EAGER](#le-piège-eager)
 - [N+1: Les deux solutions](#n1-les-deux-solutions)
   - [Solution 1 — JPQL JOIN FETCH](#solution-1--jpql-join-fetch)
   - [Solution 2 — @EntityGraph](#solution-2--entitygraph)
-- [Le piège EAGER](#le-piège-eager)
 - [Le problème MultipleBag](#le-problème-multiplebag)
 - [Associations JPA: Considérations architecturales](#associations-jpa-considérations-architecturales)
 - [Le problème N+1 n'est pas propre à JPA](#le-problème-n1-nest-pas-propre-à-jpa)
@@ -74,14 +74,14 @@ Le problème N+1 est trompeusement peu coûteux dans un environnement de dévelo
 avec peu de données. Il devient rapidement onéreux en production, là où N est grand et
 où les associations sont souvent imbriquées.
 
-| Scénario | Entités | Associations accédées | Total requêtes |
-|---|---|---|---|
-| Cette démo — utilisateurs | 3 utilisateurs | posts + images | **7** (1 + 3 + 3) |
-| Cette démo — articles | 12 articles | images + auteur | **25** (1 + 12 + 12) |
-| Fil social (20 posts/page) | 20 posts | auteur + likes + commentaires + médias | **81** |
-| Liste d'articles de blog (50/page) | 50 articles | auteur + tags + commentaires | **151** |
-| Liste de commandes e-commerce | 100 commandes | articles + client + livraison | **301** |
-| Export utilisateurs admin (500) | 500 utilisateurs | rôles + dernière connexion + profil | **1 501** |
+| Scénario | Entités | Associations accédées | Requêtes N+1 | Sans N+1 |
+|---|---|---|---|---|
+| Cette démo — utilisateurs | 3 utilisateurs | posts + images | **7** (1 + 3 + 3) | **1** |
+| Cette démo — articles | 12 articles | images + auteur | **25** (1 + 12 + 12) | **1** |
+| Fil social (20 posts/page) | 20 posts | auteur + likes + commentaires + médias | **81** | **4** |
+| Liste d'articles de blog (50/page) | 50 articles | auteur + tags + commentaires | **151** | **3** |
+| Liste de commandes e-commerce | 100 commandes | articles + client + livraison | **301** | **3** |
+| Export utilisateurs admin (500) | 500 utilisateurs | rôles + dernière connexion + profil | **1 501** | **3** |
 
 Une seule requête chargeant 100 commandes et accédant à trois associations génère 301
 requêtes. L'endpoint fonctionne bien en phase de test, passe en production, et devient
@@ -211,41 +211,6 @@ Comprendre ces valeurs par défaut facilite le raisonnement sur les
 
 ---
 
-## N+1: Les deux solutions
-
-Le problème N+1 a deux solutions standard en JPA. Les deux consistent à dire à
-Hibernate de charger l'association avec un `JOIN` au moment de la requête, plutôt que
-paresseusement ligne par ligne.
-
-### Solution 1 — JPQL `JOIN FETCH`
-
-```java
-@Query("SELECT DISTINCT u FROM User u JOIN FETCH u.posts")
-List<User> findAllWithPostsFetchJoin();
-```
-
-Hibernate réécrit cela en une seule requête SQL avec `JOIN`. Le `DISTINCT` évite les
-doublons d'objets `User` quand un utilisateur possède plusieurs posts. Contrôle total,
-mais vous écrivez le JPQL vous-même.
-
-### Solution 2 — `@EntityGraph`
-
-```java
-@EntityGraph(attributePaths = {"posts"})
-@Query("SELECT DISTINCT u FROM User u")
-List<User> findAllWithPostsEntityGraph();
-```
-
-Déclare le chargement anticipé comme métadonnée sur la méthode du repository plutôt
-que dans la chaîne de requête. Hibernate génère le même `JOIN` en coulisses. Utile
-quand vous souhaitez garder le JPQL propre ou réutiliser une requête de base avec
-plusieurs stratégies de chargement.
-
-Les deux approches produisent une seule requête au lieu de N+1. Le choix entre elles
-relève principalement du style et de la complexité de vos requêtes.
-
----
-
 ## Le piège EAGER
 
 Face au N+1, le réflexe courant est de passer l'association à `FetchType.EAGER`. Cela
@@ -288,6 +253,41 @@ requête. Dans la plupart des cas, aucune de ces conditions n'est remplie.
 > **Règle à retenir :** commencez toujours avec `LAZY`. Chargez les associations
 > explicitement avec `JOIN FETCH` ou `@EntityGraph`, uniquement sur les requêtes qui
 > en ont réellement besoin.
+
+---
+
+## N+1: Les deux solutions
+
+Le problème N+1 a deux solutions standard en JPA. Les deux consistent à dire à
+Hibernate de charger l'association avec un `JOIN` au moment de la requête, plutôt que
+paresseusement ligne par ligne.
+
+### Solution 1 — JPQL `JOIN FETCH`
+
+```java
+@Query("SELECT DISTINCT u FROM User u JOIN FETCH u.posts")
+List<User> findAllWithPostsFetchJoin();
+```
+
+Hibernate réécrit cela en une seule requête SQL avec `JOIN`. Le `DISTINCT` évite les
+doublons d'objets `User` quand un utilisateur possède plusieurs posts. Contrôle total,
+mais vous écrivez le JPQL vous-même.
+
+### Solution 2 — `@EntityGraph`
+
+```java
+@EntityGraph(attributePaths = {"posts"})
+@Query("SELECT DISTINCT u FROM User u")
+List<User> findAllWithPostsEntityGraph();
+```
+
+Déclare le chargement anticipé comme métadonnée sur la méthode du repository plutôt
+que dans la chaîne de requête. Hibernate génère le même `JOIN` en coulisses. Utile
+quand vous souhaitez garder le JPQL propre ou réutiliser une requête de base avec
+plusieurs stratégies de chargement.
+
+Les deux approches produisent une seule requête au lieu de N+1. Le choix entre elles
+relève principalement du style et de la complexité de vos requêtes.
 
 ---
 
@@ -454,6 +454,8 @@ Cette approche par requête est exactement ce que `JOIN FETCH` et `@EntityGraph`
 apportent à JPA — c'est pourquoi ce sont les bonnes solutions. Le raccourci statique
 `FetchType.EAGER` dans JPA est une anomalie, et un piège dans lequel il est facile
 de tomber.
+
+Vous trouverez ci-dessous des exemples de requêtes avec chargement eager et lazy dans différents ORM.
 
 ### JavaScript / TypeScript — AdonisJS Lucid ORM · [lucid.adonisjs.com/docs/relationships#preload-relationship](https://lucid.adonisjs.com/docs/relationships#preload-relationship)
 

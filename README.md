@@ -22,10 +22,10 @@ beside it. Import the Postman collection, start the app, and watch the query cou
   - [Posts](#posts)
   - [Bag Problem](#bag-problem)
 - [JPA Fetch Type Defaults](#jpa-fetch-type-defaults)
+- [The EAGER Trap](#the-eager-trap)
 - [N+1: The Two Fixes](#n1-the-two-fixes)
   - [Fix 1 — JPQL JOIN FETCH](#fix-1--jpql-join-fetch)
   - [Fix 2 — @EntityGraph](#fix-2--entitygraph)
-- [The EAGER Trap](#the-eager-trap)
 - [The MultipleBag Problem](#the-multiplebag-problem)
 - [JPA Relationships: Architectural Considerations](#jpa-relationships-architectural-considerations)
 - [The N+1 Problem is Not JPA-Specific](#the-n1-problem-is-not-jpa-specific)
@@ -69,14 +69,14 @@ have on in production and often forget to check in development.
 N+1 is deceptively cheap in a development environment with seed data. It becomes
 expensive fast in production, where N is large and associations are often nested.
 
-| Scenario | Entities | Associations accessed | Total queries |
-|---|---|---|---|
-| This demo — users | 3 users | posts + images | **7** (1 + 3 + 3) |
-| This demo — posts | 12 posts | images + author | **25** (1 + 12 + 12) |
-| Social feed (20 posts/page) | 20 posts | author + likes + comments + media | **81** |
-| Blog post list (paginated, 50 posts) | 50 posts | author + tags + comments | **151** |
-| E-commerce order list | 100 orders | items + customer + shipping | **301** |
-| Admin user export (500 users) | 500 users | roles + last login + profile | **1 501** |
+| Scenario | Entities | Associations accessed | N+1 queries | Without N+1 |
+|---|---|---|---|---|
+| This demo — users | 3 users | posts + images | **7** (1 + 3 + 3) | **1** |
+| This demo — posts | 12 posts | images + author | **25** (1 + 12 + 12) | **1** |
+| Social feed (20 posts/page) | 20 posts | author + likes + comments + media | **81** | **4** |
+| Blog post list (paginated, 50 posts) | 50 posts | author + tags + comments | **151** | **3** |
+| E-commerce order list | 100 orders | items + customer + shipping | **301** | **3** |
+| Admin user export (500 users) | 500 users | roles + last login + profile | **1 501** | **3** |
 
 A single request that loads 100 orders and touches three associations produces 301
 queries. The endpoint looks fine in testing, ships to production, and becomes a database
@@ -203,39 +203,6 @@ Understanding these defaults makes both the [fixes below](#n1-the-two-fixes) and
 
 ---
 
-## N+1: The Two Fixes
-
-The N+1 problem has two standard solutions in JPA. Both work by telling Hibernate to
-load the association with a `JOIN` at the time of the query, rather than lazily per row.
-
-### Fix 1 — JPQL `JOIN FETCH`
-
-```java
-@Query("SELECT DISTINCT u FROM User u JOIN FETCH u.posts")
-List<User> findAllWithPostsFetchJoin();
-```
-
-Hibernate rewrites this into a single SQL `JOIN` query. The `DISTINCT` prevents
-duplicate `User` objects when a user has multiple posts. Full control, but you write
-the JPQL yourself.
-
-### Fix 2 — `@EntityGraph`
-
-```java
-@EntityGraph(attributePaths = {"posts"})
-@Query("SELECT DISTINCT u FROM User u")
-List<User> findAllWithPostsEntityGraph();
-```
-
-Declares the eager fetch as metadata on the repository method rather than in the query
-string. Hibernate generates the same `JOIN` under the hood. Useful when you want to
-keep the JPQL clean or reuse a base query across multiple fetch strategies.
-
-Both approaches produce one query instead of N+1. The choice between them is mostly
-a matter of style and how complex your queries are.
-
----
-
 ## The EAGER Trap
 
 When developers first encounter N+1, a common instinct is to set `FetchType.EAGER` on
@@ -275,6 +242,39 @@ conditions hold.
 
 > **Rule of thumb:** always start with `LAZY`. Fetch associations explicitly with
 > `JOIN FETCH` or `@EntityGraph`, only on the queries that actually need them.
+
+---
+
+## N+1: The Two Fixes
+
+The N+1 problem has two standard solutions in JPA. Both work by telling Hibernate to
+load the association with a `JOIN` at the time of the query, rather than lazily per row.
+
+### Fix 1 — JPQL `JOIN FETCH`
+
+```java
+@Query("SELECT DISTINCT u FROM User u JOIN FETCH u.posts")
+List<User> findAllWithPostsFetchJoin();
+```
+
+Hibernate rewrites this into a single SQL `JOIN` query. The `DISTINCT` prevents
+duplicate `User` objects when a user has multiple posts. Full control, but you write
+the JPQL yourself.
+
+### Fix 2 — `@EntityGraph`
+
+```java
+@EntityGraph(attributePaths = {"posts"})
+@Query("SELECT DISTINCT u FROM User u")
+List<User> findAllWithPostsEntityGraph();
+```
+
+Declares the eager fetch as metadata on the repository method rather than in the query
+string. Hibernate generates the same `JOIN` under the hood. Useful when you want to
+keep the JPQL clean or reuse a base query across multiple fetch strategies.
+
+Both approaches produce one query instead of N+1. The choice between them is mostly
+a matter of style and how complex your queries are.
 
 ---
 
@@ -433,6 +433,8 @@ User.query()                   // this query does not
 This per-query approach is actually what `JOIN FETCH` and `@EntityGraph` bring to JPA
 — which is why they are the correct fix. The static `FetchType.EAGER` shortcut in JPA
 is an anomaly, and an easy trap to fall into.
+
+Below are eager loading and lazy loading query examples across different ORMs.
 
 ### JavaScript / TypeScript — AdonisJS Lucid ORM · [lucid.adonisjs.com/docs/relationships#preload-relationship](https://lucid.adonisjs.com/docs/relationships#preload-relationship)
 
