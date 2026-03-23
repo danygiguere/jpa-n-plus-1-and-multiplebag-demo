@@ -357,22 +357,31 @@ sur chaque chargement.
 Fonctionne bien quand l'équipe comprend le problème, que les revues de code vérifient
 les stratégies de chargement, et que la journalisation SQL est activée en développement.
 
-**Niveau 2 — Supprimer `@OneToMany`, conserver `@ManyToOne`**
+**Niveau 2 — Supprimer `@OneToMany` et `@ManyToMany`, conserver `@ManyToOne` et `@OneToOne`**
 
-`@OneToMany` est là où les explosions N+1 se produisent — une collection chargée par
-ligne. `@ManyToOne` est bien moins risqué (une ligne supplémentaire, pas N) et est
-gérable en `LAZY`. Une architecture défensive courante supprime toutes les relations
-côté collection et les remplace par des méthodes de repository explicites :
+`@OneToMany` et `@ManyToMany` sont là où les explosions N+1 se produisent — des
+collections chargées par ligne. `@ManyToOne` et `@OneToOne` sont bien moins risqués
+(une ligne supplémentaire, pas N) et sont gérables en `LAZY`. Une architecture
+défensive courante supprime toutes les relations côté collection et les remplace par
+des méthodes de repository explicites :
 
 ```java
 // ❌ Supprimer — le chargement implicite de collections est la source principale de N+1
 @OneToMany(mappedBy = "user")
 private List<Post> posts;
 
+// ❌ Supprimer — aussi une collection, même risque N+1
+@ManyToMany
+private Set<Tag> tags;
+
 // ✅ Conserver — un join par requête, gérable en LAZY
 @ManyToOne(fetch = FetchType.LAZY)
 @JoinColumn(name = "user_id")
 private User user;
+
+// ✅ Conserver avec attention — EAGER par défaut, doit être déclaré LAZY explicitement
+@OneToOne(fetch = FetchType.LAZY, mappedBy = "user")
+private Profile profile;
 ```
 
 ```java
@@ -386,7 +395,8 @@ sur la collection. Vous devez écrire la requête, donc la requête est toujours
 
 **Niveau 3 — Supprimer toutes les relations, utiliser uniquement des colonnes FK**
 
-Remplacez chaque `@ManyToOne` par une simple colonne de clé étrangère `Long`. Aucune
+Remplacez chaque `@ManyToOne` et `@OneToOne` par une simple colonne de clé étrangère
+`Long`, et supprimez entièrement tous les `@OneToMany` et `@ManyToMany`. Aucune
 relation, aucun proxy lazy, aucun chargement implicite d'aucune sorte. Chaque jointure
 est une requête explicite.
 
@@ -394,6 +404,10 @@ est une requête explicite.
 // Au lieu de :  @ManyToOne private User user;
 @Column(name = "user_id", nullable = false)
 private Long userId;
+
+// Au lieu de :  @OneToOne private Profile profile;
+@Column(name = "profile_id")
+private Long profileId;
 ```
 
 C'est le modèle autour duquel **Spring Data JDBC** est conçu — pas de lazy loading, pas
@@ -409,7 +423,7 @@ le service qui touche la base de données.
 | Approche | Risque de N+1 | Code supplémentaire | Support des cascades |
 |---|---|---|---|
 | LAZY + chargement explicite | Faible (avec discipline) | Faible | ✅ Complet |
-| Supprimer `@OneToMany` | Très faible | Moyen | Partiel |
+| Supprimer `@OneToMany` et `@ManyToMany` | Très faible | Moyen | Partiel |
 | Supprimer toutes les relations | Aucun | Élevé | Suppressions via `ON DELETE CASCADE` ; sauvegardes explicites |
 
 Il n'y a pas de réponse universellement correcte — cela dépend de la discipline de
@@ -593,10 +607,6 @@ La boucle est évidente ici, mais dans une vraie base de code, la requête exter
 requête interne se trouvent souvent dans des méthodes ou des couches différentes de
 l'application. Le schéma ne devient visible que lorsqu'on regarde ce qui est réellement
 envoyé à la base de données.
-
-> En pratique, la requête interne se trouve rarement aussi près de la requête externe —
-> elle est généralement enfouie dans un service ou une méthode de repository distinct,
-> ce qui rend le nombre de requêtes encore plus difficile à repérer.
 
 La correction repose sur le même principe que `JOIN FETCH` et `preload()` : récupérer
 toutes les lignes associées en une seule requête groupée, puis faire l'association en

@@ -341,22 +341,30 @@ the discipline is in being explicit about every fetch.
 Works well when the team understands the problem, code reviews check fetch strategies,
 and SQL logging is on in development.
 
-**Level 2 — Drop `@OneToMany`, keep `@ManyToOne`**
+**Level 2 — Drop `@OneToMany` and `@ManyToMany`, keep `@ManyToOne` and `@OneToOne`**
 
-`@OneToMany` is where N+1 explosions originate — a collection loaded per row.
-`@ManyToOne` is much lower risk (one extra row, not N rows) and is manageable when kept
-`LAZY`. A common defensive architecture removes all collection-side relationships and
-replaces them with explicit repository methods:
+`@OneToMany` and `@ManyToMany` are where N+1 explosions originate — collections loaded
+per row. `@ManyToOne` and `@OneToOne` are much lower risk (one extra row, not N rows)
+and are manageable when kept `LAZY`. A common defensive architecture removes all
+collection-side relationships and replaces them with explicit repository methods:
 
 ```java
 // ❌ Remove — implicit collection loading is the primary N+1 source
 @OneToMany(mappedBy = "user")
 private List<Post> posts;
 
+// ❌ Remove — also a collection, same N+1 risk
+@ManyToMany
+private Set<Tag> tags;
+
 // ✅ Keep — one join per query, manageable when LAZY
 @ManyToOne(fetch = FetchType.LAZY)
 @JoinColumn(name = "user_id")
 private User user;
+
+// ✅ Keep with care — EAGER by default, must be declared LAZY explicitly
+@OneToOne(fetch = FetchType.LAZY, mappedBy = "user")
+private Profile profile;
 ```
 
 ```java
@@ -370,13 +378,18 @@ collection. You have to write the query, so the query is always visible.
 
 **Level 3 — Remove all relationships, use only FK columns**
 
-Replace every `@ManyToOne` with a plain `Long` foreign key column. No relationships,
-no lazy proxies, no implicit loading of any kind. Every join is an explicit query.
+Replace every `@ManyToOne` and `@OneToOne` with a plain `Long` foreign key column, and
+drop all `@OneToMany` and `@ManyToMany` entirely. No relationships, no lazy proxies, no
+implicit loading of any kind. Every join is an explicit query.
 
 ```java
 // Instead of:  @ManyToOne private User user;
 @Column(name = "user_id", nullable = false)
 private Long userId;
+
+// Instead of:  @OneToOne private Profile profile;
+@Column(name = "profile_id")
+private Long profileId;
 ```
 
 This is the design that **Spring Data JDBC** is built around — no lazy loading, no
@@ -391,7 +404,7 @@ or service touches the database.
 | Approach | Risk of N+1 | Boilerplate | Cascade support |
 |---|---|---|---|
 | LAZY + explicit fetching | Low (with discipline) | Low | ✅ Full |
-| Drop `@OneToMany` | Very low | Medium | Partial |
+| Drop `@OneToMany` and `@ManyToMany` | Very low | Medium | Partial |
 | Remove all relationships | None | High | Deletes via `ON DELETE CASCADE`; saves explicit |
 
 There is no universally correct answer — it depends on team discipline, codebase
@@ -570,10 +583,6 @@ for (User user : users) {
 The loop is obvious here, but in a real codebase the outer query and the inner query
 often live in different methods or different layers of the application. The pattern only
 becomes visible when you look at what is actually sent to the database.
-
-> In practice, the inner query rarely lives this close to the outer one — it is
-> typically buried in a separate service or repository method, making the query count
-> even harder to spot.
 
 The fix is the same principle as `JOIN FETCH` and `preload()`: fetch all the related
 rows in one batched query, then associate them in memory.
