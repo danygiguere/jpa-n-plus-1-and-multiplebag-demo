@@ -198,8 +198,8 @@ project are explicitly declared `LAZY`, overriding the JPA defaults:
 private User user;
 ```
 
-Understanding these defaults makes both the [fixes below](#n1-the-two-fixes) and the
-[EAGER trap](#the-eager-trap) easier to reason about.
+Understanding these defaults makes both the
+[EAGER trap](#the-eager-trap) and the [fixes below](#n1-the-two-fixes) easier to reason about.
 
 ---
 
@@ -434,7 +434,7 @@ This per-query approach is actually what `JOIN FETCH` and `@EntityGraph` bring t
 — which is why they are the correct fix. The static `FetchType.EAGER` shortcut in JPA
 is an anomaly, and an easy trap to fall into.
 
-Below are eager loading and lazy loading query examples across different ORMs.
+Below are lazy loading and eager loading query examples across different ORMs.
 
 ### JavaScript / TypeScript — AdonisJS Lucid ORM · [lucid.adonisjs.com/docs/relationships#preload-relationship](https://lucid.adonisjs.com/docs/relationships#preload-relationship)
 
@@ -493,51 +493,74 @@ const users = await User.query()
 // Total: 3 queries — one per relationship
 ```
 
+Under the hood, the ORM issues one `SELECT` per relationship using an `IN` clause — e.g. `SELECT * FROM posts WHERE user_id IN (1, 2, 3, ...)` — then maps the results back to their parent records in memory.
+
 ### Ruby on Rails — ActiveRecord · [guides.rubyonrails.org/active_record_querying.html#eager-load](https://guides.rubyonrails.org/active_record_querying.html#eager-load)
 
 ```ruby
-# ❌ N+1 — triggers one query per user
+# ❌ N+1 — 1 + N + N queries
 users = User.all
-users.each { |u| puts u.posts.count }
+users.each do |user|
+  user.posts.each do |post|              # 1 query per user
+    post.images.each { |i| puts i.url } # 1 query per post
+  end
+end
+```
 
-# ✅ Fix — eager load with includes
+```ruby
+# ✅ Fix — 3 queries total
 users = User.includes(:images, posts: :images).all
 ```
 
 ### Python — Django ORM · [docs.djangoproject.com/.../querysets/#prefetch-related](https://docs.djangoproject.com/en/6.0/ref/models/querysets/#prefetch-related)
 
 ```python
-# ❌ N+1
+# ❌ N+1 — 1 + N + N queries
 for user in User.objects.all():
-    print(user.post_set.count())  # one query per user
+    for post in user.posts.all():        # 1 query per user
+        for image in post.images.all():  # 1 query per post
+            print(image.url)
+```
 
-# ✅ Fix — prefetch_related
+```python
+# ✅ Fix — 3 queries total
 users = User.objects.prefetch_related('posts__images', 'images').all()
 ```
 
 ### PHP — Laravel Eloquent · [laravel.com/docs/12.x/eloquent-relationships#eager-loading](https://laravel.com/docs/12.x/eloquent-relationships#eager-loading)
 
 ```php
-// ❌ N+1 — one query per user, then one per post
+// ❌ N+1 — 1 + N + N queries
 $users = User::all();
 foreach ($users as $user) {
-    foreach ($user->posts as $post) { echo $post->images->count(); }
+    foreach ($user->posts as $post) {       // 1 query per user
+        foreach ($post->images as $image) { // 1 query per post
+            echo $image->url;
+        }
+    }
 }
+```
 
-// ✅ Fix — with() eager loads in a few queries
+```php
+// ✅ Fix — 3 queries total
 $users = User::with(['posts.images', 'images'])->get();
 ```
 
 ### Swift — Vapor Fluent ORM · [docs.vapor.codes/fluent/relations/#eager-loading](https://docs.vapor.codes/fluent/relations/#eager-loading)
 
 ```swift
-// ❌ N+1 — get(on:) in a loop fires one query per row
+// ❌ N+1 — 1 + N + N queries
 let users = try await User.query(on: db).all()
 for user in users {
-    let posts = try await user.$posts.get(on: db)
+    let posts = try await user.$posts.get(on: db)  // 1 query per user
+    for post in posts {
+        _ = try await post.$images.get(on: db)     // 1 query per post
+    }
 }
+```
 
-// ✅ Fix — with() eager loads nested relations
+```swift
+// ✅ Fix — 3 queries total
 let users = try await User.query(on: db)
     .with(\.$posts) { post in post.with(\.$images) }
     .with(\.$images)
@@ -547,14 +570,19 @@ let users = try await User.query(on: db)
 ### Go — GORM · [gorm.io/docs/preload.html](https://gorm.io/docs/preload.html)
 
 ```go
-// ❌ N+1 — Association().Find() in a loop fires one query per row
+// ❌ N+1 — 1 + N + N queries
 var users []User
 db.Find(&users)
 for i := range users {
-    db.Model(&users[i]).Association("Posts").Find(&users[i].Posts)
+    db.Model(&users[i]).Association("Posts").Find(&users[i].Posts) // 1 query per user
+    for j := range users[i].Posts {
+        db.Model(&users[i].Posts[j]).Association("Images").Find(&users[i].Posts[j].Images) // 1 query per post
+    }
 }
+```
 
-// ✅ Fix — Preload with dot notation for nested relations
+```go
+// ✅ Fix — 3 queries total
 db.Preload("Posts.Images").Preload("Images").Find(&users)
 ```
 
@@ -606,12 +634,12 @@ List<Post> posts = namedJdbc.query(
 Map<Long, List<Post>> postsByUser = posts.stream()
     .collect(Collectors.groupingBy(Post::getUserId));
 
-for (User user : users) {
-    List<Post> latest = postsByUser
-        .getOrDefault(user.getId(), List.of())
-        .stream().limit(2).toList();
-    user.setPosts(latest);
-}
+List<User> usersWithPosts = users.stream()
+    .map(user -> {
+        user.setPosts(postsByUser.getOrDefault(user.getId(), List.of()));
+        return user;
+    })
+    .toList();
 // Total: 2 queries
 ```
 

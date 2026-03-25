@@ -206,8 +206,7 @@ valeurs par défaut de JPA :
 private User user;
 ```
 
-Comprendre ces valeurs par défaut facilite le raisonnement sur les
-[solutions ci-dessous](#n1-les-deux-solutions) et le [piège EAGER](#le-piège-eager).
+Comprendre ces valeurs par défaut facilite le raisonnement sur le [piège EAGER](#le-piège-eager) et les [solutions ci-dessous](#n1-les-deux-solutions).
 
 ---
 
@@ -455,7 +454,7 @@ apportent à JPA — c'est pourquoi ce sont les bonnes solutions. Le raccourci s
 `FetchType.EAGER` dans JPA est une anomalie, et un piège dans lequel il est facile
 de tomber.
 
-Vous trouverez ci-dessous des exemples de requêtes avec chargement eager et lazy dans différents ORM.
+Vous trouverez ci-dessous des exemples de requêtes avec chargement lazy et eager dans différents ORM.
 
 ### JavaScript / TypeScript — AdonisJS Lucid ORM · [lucid.adonisjs.com/docs/relationships#preload-relationship](https://lucid.adonisjs.com/docs/relationships#preload-relationship)
 
@@ -515,51 +514,74 @@ const users = await User.query()
 // Total : 3 requêtes — une par relation
 ```
 
+En coulisse, l'ORM émet un `SELECT` par relation en utilisant une clause `IN` — ex. `SELECT * FROM posts WHERE user_id IN (1, 2, 3, ...)` — puis associe les résultats à leurs enregistrements parents en mémoire.
+
 ### Ruby on Rails — ActiveRecord · [guides.rubyonrails.org/active_record_querying.html#eager-load](https://guides.rubyonrails.org/active_record_querying.html#eager-load)
 
 ```ruby
-# ❌ N+1 — déclenche une requête par utilisateur
+# ❌ N+1 — 1 + N + N requêtes
 users = User.all
-users.each { |u| puts u.posts.count }
+users.each do |user|
+  user.posts.each do |post|              # 1 requête par utilisateur
+    post.images.each { |i| puts i.url } # 1 requête par article
+  end
+end
+```
 
-# ✅ Correction — chargement anticipé avec includes
+```ruby
+# ✅ Correction — 3 requêtes au total
 users = User.includes(:images, posts: :images).all
 ```
 
 ### Python — Django ORM · [docs.djangoproject.com/.../querysets/#prefetch-related](https://docs.djangoproject.com/en/6.0/ref/models/querysets/#prefetch-related)
 
 ```python
-# ❌ N+1
+# ❌ N+1 — 1 + N + N requêtes
 for user in User.objects.all():
-    print(user.post_set.count())  # une requête par utilisateur
+    for post in user.posts.all():        # 1 requête par utilisateur
+        for image in post.images.all():  # 1 requête par article
+            print(image.url)
+```
 
-# ✅ Correction — prefetch_related
+```python
+# ✅ Correction — 3 requêtes au total
 users = User.objects.prefetch_related('posts__images', 'images').all()
 ```
 
 ### PHP — Laravel Eloquent · [laravel.com/docs/12.x/eloquent-relationships#eager-loading](https://laravel.com/docs/12.x/eloquent-relationships#eager-loading)
 
 ```php
-// ❌ N+1 — une requête par utilisateur, puis une par article
+// ❌ N+1 — 1 + N + N requêtes
 $users = User::all();
 foreach ($users as $user) {
-    foreach ($user->posts as $post) { echo $post->images->count(); }
+    foreach ($user->posts as $post) {       // 1 requête par utilisateur
+        foreach ($post->images as $image) { // 1 requête par article
+            echo $image->url;
+        }
+    }
 }
+```
 
-// ✅ Correction — with() charge en anticipé en quelques requêtes
+```php
+// ✅ Correction — 3 requêtes au total
 $users = User::with(['posts.images', 'images'])->get();
 ```
 
 ### Swift — Vapor Fluent ORM · [docs.vapor.codes/fluent/relations/#eager-loading](https://docs.vapor.codes/fluent/relations/#eager-loading)
 
 ```swift
-// ❌ N+1 — get(on:) dans une boucle exécute une requête par ligne
+// ❌ N+1 — 1 + N + N requêtes
 let users = try await User.query(on: db).all()
 for user in users {
-    let posts = try await user.$posts.get(on: db)
+    let posts = try await user.$posts.get(on: db)  // 1 requête par utilisateur
+    for post in posts {
+        _ = try await post.$images.get(on: db)     // 1 requête par article
+    }
 }
+```
 
-// ✅ Correction — with() charge les relations imbriquées en anticipé
+```swift
+// ✅ Correction — 3 requêtes au total
 let users = try await User.query(on: db)
     .with(\.$posts) { post in post.with(\.$images) }
     .with(\.$images)
@@ -569,14 +591,19 @@ let users = try await User.query(on: db)
 ### Go — GORM · [gorm.io/docs/preload.html](https://gorm.io/docs/preload.html)
 
 ```go
-// ❌ N+1 — Association().Find() dans une boucle exécute une requête par ligne
+// ❌ N+1 — 1 + N + N requêtes
 var users []User
 db.Find(&users)
 for i := range users {
-    db.Model(&users[i]).Association("Posts").Find(&users[i].Posts)
+    db.Model(&users[i]).Association("Posts").Find(&users[i].Posts) // 1 requête par utilisateur
+    for j := range users[i].Posts {
+        db.Model(&users[i].Posts[j]).Association("Images").Find(&users[i].Posts[j].Images) // 1 requête par article
+    }
 }
+```
 
-// ✅ Correction — Preload avec notation pointée pour les relations imbriquées
+```go
+// ✅ Correction — 3 requêtes au total
 db.Preload("Posts.Images").Preload("Images").Find(&users)
 ```
 
@@ -631,12 +658,12 @@ List<Post> posts = namedJdbc.query(
 Map<Long, List<Post>> postsByUser = posts.stream()
     .collect(Collectors.groupingBy(Post::getUserId));
 
-for (User user : users) {
-    List<Post> latest = postsByUser
-        .getOrDefault(user.getId(), List.of())
-        .stream().limit(2).toList();
-    user.setPosts(latest);
-}
+List<User> usersWithPosts = users.stream()
+    .map(user -> {
+        user.setPosts(postsByUser.getOrDefault(user.getId(), List.of()));
+        return user;
+    })
+    .toList();
 // Total : 2 requêtes
 ```
 
